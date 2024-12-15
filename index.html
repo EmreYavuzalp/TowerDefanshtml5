@@ -28,19 +28,19 @@
         let angle = 45;
         let power = 50;
         let isDragging = false;
-        let launchPoint = { x: 150, y: canvas.height - 10 }; // Player at ground level
+        let launchPoint = { x: 150, y: canvas.height - 160 }; // Player now on top of the fortress
         let isArrowFlying = false;
         let trajectoryPoints = [];
         let arrowPosition = null;
         let enemies = [];
         let gameOver = false;
 
-        // Fortress setup
+        // Fortress setup - taller
         const fortress = {
             x: 75,
-            y: canvas.height - 60,
+            y: canvas.height - 150, // Positioned so player is on top
             width: 150,
-            height: 50
+            height: 150 // Increased height
         };
 
         function drawFortress() {
@@ -77,7 +77,7 @@
 
         function drawTrajectory() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            drawFortress();
+            drawFortress(); // Ensure fortress is drawn before trajectory
 
             ctx.fillStyle = 'black';
             ctx.beginPath();
