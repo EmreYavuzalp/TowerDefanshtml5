@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Two-Player Arrow Game</title>
+    <title>Arrow Trajectory Game</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -16,69 +16,98 @@
     </style>
 </head>
 <body>
-    <h1>Two-Player Arrow Game</h1>
-    <canvas id="trajectoryCanvas" width="2000" height="1000"></canvas>
-    <p id="status">Player 1's Turn</p>
+    <h1>Arrow Trajectory Game</h1>
+    <canvas id="trajectoryCanvas" width="1200" height="600"></canvas>
+    <div id="gameOver" style="display:none; color:red; font-size:2em; position:absolute; top:50%; left:50%; transform:translate(-50%, -50%);">Game Over!</div>
 
     <script>
         const canvas = document.getElementById('trajectoryCanvas');
         const ctx = canvas.getContext('2d');
-        const statusElement = document.getElementById('status');
+        const gameOverEl = document.getElementById('gameOver');
 
-        let currentPlayer = 1; // 1 for Player 1, 2 for Player 2
-        const players = [
-            { x: 150, y: canvas.height - 150, width: 80, height: 150, visible: true },
-            { x: canvas.width - 230, y: canvas.height - 150, width: 80, height: 150, visible: true }
-        ];
         let angle = 45;
         let power = 50;
         let isDragging = false;
-        let launchPoint = { x: players[currentPlayer - 1].x + 40, y: players[currentPlayer - 1].y }; // Adjust launch point based on the current player
+        let launchPoint = { x: 150, y: canvas.height - 10 }; // Player at ground level
         let isArrowFlying = false;
         let trajectoryPoints = [];
         let arrowPosition = null;
-        let cameraX = 0; // To control camera position
+        let enemies = [];
+        let gameOver = false;
+
+        // Fortress setup
+        const fortress = {
+            x: 75,
+            y: canvas.height - 60,
+            width: 150,
+            height: 50
+        };
+
+        function drawFortress() {
+            ctx.fillStyle = 'gray';
+            ctx.fillRect(fortress.x, fortress.y, fortress.width, fortress.height);
+        }
 
         function calculateArrowTrajectory(angle, power, totalTime = 5) {
-            const g = 3; // Acceleration due to gravity (m/s^2)
-            const angleInRadians = (angle * Math.PI) / 180; // Convert angle to radians
+            const g = 9.8; // Acceleration due to gravity (m/s^2)
+            const angleInRadians = (angle * Math.PI) / 180;
             const initialVelocityX = power * Math.cos(angleInRadians);
             const initialVelocityY = power * Math.sin(angleInRadians);
 
             const points = [];
-            const deltaTime = 0.05; // Smaller intervals for smooth animation
+            const deltaTime = 0.05;
 
             for (let t = 0; t <= totalTime; t += deltaTime) {
                 const x = initialVelocityX * t;
                 const y = initialVelocityY * t - 0.5 * g * t * t;
 
-                points.push({ x, y });
+                // Store height above ground, not below
+                if (y >= 0) {
+                    points.push({ x, y });
+                } else {
+                    // If below ground, calculate where it hits
+                    const tImpact = initialVelocityY / g;
+                    points.push({ x: initialVelocityX * tImpact, y: 0 });
+                    break;
+                }
             }
 
             return points;
         }
 
         function drawTrajectory() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawFortress();
+
             ctx.fillStyle = 'black';
             ctx.beginPath();
-            ctx.arc(launchPoint.x - cameraX, launchPoint.y, 5, 0, Math.PI * 2);
+            ctx.arc(launchPoint.x, launchPoint.y, 5, 0, Math.PI * 2);
             ctx.fill();
 
             if (!isArrowFlying) {
                 const trajectory = calculateArrowTrajectory(angle, power);
                 const scale = 5;
 
-                const direction = currentPlayer === 1 ? -1 : 1; // Direction for Player 1 is negative, for Player 2 it's positive
-                trajectory.forEach((point) => {
-                    const canvasX = launchPoint.x + point.x * scale * direction - cameraX;
-                    const canvasY = launchPoint.y - point.y * scale; // Negative y for both players as they aim upwards
+                // Draw each point of the trajectory
+                trajectory.forEach((point, index) => {
+                    const canvasX = launchPoint.x + point.x * scale;
+                    const canvasY = launchPoint.y - point.y * scale;
 
-                    // Check if the point is within the canvas
-                    if (canvasY >= 0 && canvasY <= canvas.height) {
+                    // Ensure we only draw above or on the ground
+                    if (canvasY <= canvas.height) {
                         ctx.beginPath();
                         ctx.arc(canvasX, canvasY, 2, 0, Math.PI * 2);
                         ctx.fillStyle = 'red';
                         ctx.fill();
+
+                        // If this is the last point or hits ground, draw line to ground
+                        if (index === trajectory.length - 1 || point.y === 0) {
+                            ctx.beginPath();
+                            ctx.moveTo(canvasX, canvasY);
+                            ctx.lineTo(canvasX, canvas.height);
+                            ctx.strokeStyle = 'red';
+                            ctx.stroke();
+                        }
                     }
                 });
             }
@@ -88,71 +117,36 @@
             if (isArrowFlying && arrowPosition) {
                 ctx.fillStyle = 'blue';
                 ctx.beginPath();
-                ctx.arc(arrowPosition.x - cameraX, arrowPosition.y, 5, 0, Math.PI * 2);
+                ctx.arc(arrowPosition.x, arrowPosition.y, 5, 0, Math.PI * 2);
                 ctx.fill();
             }
         }
 
-        function drawPlayers() {
-            players.forEach((player, index) => {
-                if (player.visible) {
-                    ctx.save();
-                    ctx.strokeStyle = index + 1 === currentPlayer ? 'green' : 'gray';
-                    ctx.lineWidth = 3;
+        function drawEnemies() {
+            ctx.fillStyle = 'green';
+            enemies.forEach(enemy => {
+                const enemyY = Math.max(canvas.height - 20, enemy.y);
+                ctx.beginPath();
+                ctx.moveTo(enemy.x, enemyY);
+                ctx.lineTo(enemy.x + 5, enemyY + 10); // Body
+                ctx.lineTo(enemy.x - 5, enemyY + 10);
+                ctx.closePath();
+                ctx.fill();
 
-                    // Position the stickman at the base of where the rectangle was
-                    const centerX = player.x + player.width / 2;
-                    const baseY = player.y + player.height;
-
-                    // Head
-                    ctx.beginPath();
-                    ctx.arc(centerX - cameraX, baseY - player.height + 15, 10, 0, 2 * Math.PI);
-                    ctx.stroke();
-
-                    // Body
-                    ctx.beginPath();
-                    ctx.moveTo(centerX - cameraX, baseY - player.height + 25);
-                    ctx.lineTo(centerX - cameraX, baseY - 20);
-                    ctx.stroke();
-
-                    // Arms
-                    ctx.beginPath();
-                    ctx.moveTo(centerX - cameraX, baseY - player.height + 50);
-                    ctx.lineTo(centerX - cameraX - 20, baseY - player.height + 30);
-                    ctx.moveTo(centerX - cameraX, baseY - player.height + 50);
-                    ctx.lineTo(centerX - cameraX + 20, baseY - player.height + 30);
-                    ctx.stroke();
-
-                    // Legs
-                    ctx.beginPath();
-                    ctx.moveTo(centerX - cameraX, baseY - 20);
-                    ctx.lineTo(centerX - cameraX - 15, baseY);
-                    ctx.moveTo(centerX - cameraX, baseY - 20);
-                    ctx.lineTo(centerX - cameraX + 15, baseY);
-                    ctx.stroke();
-
-                    ctx.restore();
-                }
+                // Draw axe
+                ctx.beginPath();
+                ctx.moveTo(enemy.x + 5, enemyY + 5);
+                ctx.lineTo(enemy.x + 15, enemyY + 5);
+                ctx.stroke();
             });
         }
 
         function updateAngleAndPower(mouseX, mouseY) {
-            let dx = mouseX - launchPoint.x;
-            let dy = mouseY - launchPoint.y;
+            const dx = launchPoint.x - mouseX;
+            const dy = mouseY - launchPoint.y;
 
-            // Adjust angle based on which player is shooting
-            if (currentPlayer === 1) {
-                // Player 1 aims from left to right but with a reversed x calculation
-                angle = Math.atan2(-dy, -dx) * (180 / Math.PI); // Negative dx for Player 1 to aim right
-            } else {
-                // Player 2 aims from right to left
-                angle = Math.atan2(-dy, dx) * (180 / Math.PI); // Positive dx for Player 2 to aim left
-            }
-
-            if (angle < 0) angle += 360; // Ensure angle is positive
-
-            // Power based on the distance from the launch point to the mouse
-            power = Math.min(Math.sqrt(dx * dx + dy * dy) / 2, 100); // Scale power
+            angle = Math.atan2(dy, dx) * (180 / Math.PI);
+            power = Math.min(Math.sqrt(dx * dx + dy * dy) / 2, 100);
         }
 
         function startArrowFlight() {
@@ -165,68 +159,62 @@
         }
 
         function animateArrow() {
-            if (trajectoryPoints.length > 0) {
+            if (trajectoryPoints.length > 0 && !gameOver) {
                 const scale = 5;
                 const nextPoint = trajectoryPoints.shift();
-                const direction = currentPlayer === 1 ? -1 : 1; // Direction for trajectory animation
-                arrowPosition.x = launchPoint.x + nextPoint.x * scale * direction;
-                arrowPosition.y = launchPoint.y - nextPoint.y * scale; // Negative y for both players
-
-                // Check for collision with the ground or players
-                if (arrowPosition.y >= canvas.height || arrowPosition.x < 0 || arrowPosition.x > canvas.width) {
-                    // Arrow hit the ground or went out of bounds
+                arrowPosition.x = launchPoint.x + nextPoint.x * scale;
+                arrowPosition.y = launchPoint.y - nextPoint.y * scale;
+                // If arrow goes below ground, stop animation
+                if (arrowPosition.y >= canvas.height) {
                     isArrowFlying = false;
                     arrowPosition = null;
-                    currentPlayer = currentPlayer === 1 ? 2 : 1; // Switch player
-                    launchPoint = { x: players[currentPlayer - 1].x + 40, y: players[currentPlayer - 1].y };
-                    statusElement.textContent = `Player ${currentPlayer}'s Turn`;
-                } else {
-                    const opponent = players.find(p => p !== players[currentPlayer - 1]);
-                    if (
-                        opponent.visible &&
-                        arrowPosition.x >= opponent.x &&
-                        arrowPosition.x <= opponent.x + opponent.width &&
-                        arrowPosition.y >= opponent.y &&
-                        arrowPosition.y <= opponent.y + opponent.height
-                    ) {
-                        opponent.visible = false;
-                        isArrowFlying = false;
-                        arrowPosition = null;
-                        alert(`Player ${currentPlayer} wins!`);
-                        return; // End the game
-                    }
                 }
-
-                // Move camera to follow the arrow
-                cameraX = arrowPosition.x - canvas.width / 2;
-
                 drawScene();
-                if (isArrowFlying) {
-                    requestAnimationFrame(animateArrow);
-                }
+                if (isArrowFlying) requestAnimationFrame(animateArrow);
             } else {
                 isArrowFlying = false;
                 arrowPosition = null;
-                currentPlayer = currentPlayer === 1 ? 2 : 1; // Switch player
-                launchPoint = { x: players[currentPlayer - 1].x + 40, y: players[currentPlayer - 1].y };
-                statusElement.textContent = `Player ${currentPlayer}'s Turn`;
                 drawScene();
             }
         }
 
-        function drawScene() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            drawTrajectory();
-            drawArrow();
-            drawPlayers();
+        function spawnEnemy() {
+            enemies.push({
+                x: canvas.width,
+                y: canvas.height - 20,
+                speed: 1 + Math.random() * 2
+            });
         }
 
+        function updateEnemies() {
+            enemies = enemies.filter(enemy => {
+                enemy.x -= enemy.speed;
+                if (enemy.x <= fortress.x + fortress.width && enemy.y > fortress.y) {
+                    gameOver = true;
+                    return false;
+                }
+                return true;
+            });
+        }
+
+        function drawScene() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawFortress();
+            drawTrajectory();
+            drawArrow();
+            drawEnemies();
+            if (gameOver) {
+                gameOverEl.style.display = 'block';
+            }
+        }
+
+        // Event listeners for player interaction
         canvas.addEventListener('mousedown', (event) => {
-            isDragging = true;
+            if (!gameOver) isDragging = true;
         });
 
         canvas.addEventListener('mousemove', (event) => {
-            if (isDragging) {
+            if (isDragging && !gameOver) {
                 const rect = canvas.getBoundingClientRect();
                 const mouseX = event.clientX - rect.left;
                 const mouseY = event.clientY - rect.top;
@@ -237,13 +225,25 @@
         });
 
         canvas.addEventListener('mouseup', () => {
-            isDragging = false;
-            if (!isArrowFlying) {
-                startArrowFlight();
+            if (!gameOver) {
+                isDragging = false;
+                if (!isArrowFlying) {
+                    startArrowFlight();
+                }
             }
         });
 
-        drawScene();
+        // Game loop
+        function gameLoop() {
+            if (!gameOver) {
+                if (Math.random() < 0.01) spawnEnemy(); 
+                updateEnemies();
+                drawScene();
+            }
+            requestAnimationFrame(gameLoop);
+        }
+
+        gameLoop();
     </script>
 </body>
 </html>
