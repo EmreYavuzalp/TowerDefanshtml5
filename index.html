@@ -1,1 +1,45 @@
-dasdasddacas
+function checkCollision(arrow, monster) {
+    // Define hitboxes for the monster: head (circle) and body (rectangular)
+    const headRadius = 10;
+    const bodyWidth = 10;
+    const bodyHeight = 30;
+    
+    // Check if arrow hits the monster's head (circular hitbox)
+    const distX = Math.abs(arrow.x - monster.x);
+    const distY = Math.abs(arrow.y - (monster.y - 30));
+
+    if (distX <= headRadius && distY <= headRadius) {
+        // If the arrow is within the head's radius, it's a hit
+        return true;
+    }
+
+    // Check if the arrow hits the body (rectangular hitbox)
+    if (arrow.x >= monster.x - bodyWidth / 2 && arrow.x <= monster.x + bodyWidth / 2 && arrow.y >= monster.y - bodyHeight && arrow.y <= monster.y) {
+        // If the arrow is within the body bounds, it's a hit
+        return true;
+    }
+
+    return false;
+}
+
+function drawScene() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    drawGround(); // Draw the ground first for a soil effect
+    drawTower();  // Tower on top of ground
+    drawTrajectory();
+    drawArrow();
+
+    // Update and draw monsters
+    monsters.forEach((monster, index) => {
+        monster.move();
+        drawMonster(monster);
+        
+        // Check if the arrow collides with the monster
+        if (isArrowFlying && arrowPosition) {
+            if (checkCollision(arrowPosition, monster)) {
+                // Monster is hit, remove it from the array
+                monsters.splice(index, 1); // Remove the monster from the array
+            }
+        }
+    });
+}
