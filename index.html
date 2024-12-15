@@ -1,45 +1,264 @@
-function checkCollision(arrow, monster) {
-    // Define hitboxes for the monster: head (circle) and body (rectangular)
-    const headRadius = 10;
-    const bodyWidth = 10;
-    const bodyHeight = 30;
-    
-    // Check if arrow hits the monster's head (circular hitbox)
-    const distX = Math.abs(arrow.x - monster.x);
-    const distY = Math.abs(arrow.y - (monster.y - 30));
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arrow Trajectory Game</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+        }
 
-    if (distX <= headRadius && distY <= headRadius) {
-        // If the arrow is within the head's radius, it's a hit
-        return true;
-    }
+        canvas {
+            border: 1px solid black;
+            cursor: crosshair;
+        }
+    </style>
+</head>
+<body>
+    <h1>Arrow Trajectory Game</h1>
+    <canvas id="trajectoryCanvas" width="1200" height="600"></canvas>
 
-    // Check if the arrow hits the body (rectangular hitbox)
-    if (arrow.x >= monster.x - bodyWidth / 2 && arrow.x <= monster.x + bodyWidth / 2 && arrow.y >= monster.y - bodyHeight && arrow.y <= monster.y) {
-        // If the arrow is within the body bounds, it's a hit
-        return true;
-    }
+    <script>
+        const canvas = document.getElementById('trajectoryCanvas');
+        const ctx = canvas.getContext('2d');
 
-    return false;
-}
+        let angle = 45;
+        let power = 50;
+        let isDragging = false;
+        let launchPoint = { x: 150, y: canvas.height - 150 }; // Fixed launch point
+        let isArrowFlying = false;
+        let trajectoryPoints = [];
+        let arrowPosition = null;
 
-function drawScene() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    drawGround(); // Draw the ground first for a soil effect
-    drawTower();  // Tower on top of ground
-    drawTrajectory();
-    drawArrow();
+        // Monster data
+        let monsters = [];
+        const monsterSpeed = 2;
 
-    // Update and draw monsters
-    monsters.forEach((monster, index) => {
-        monster.move();
-        drawMonster(monster);
-        
-        // Check if the arrow collides with the monster
-        if (isArrowFlying && arrowPosition) {
-            if (checkCollision(arrowPosition, monster)) {
-                // Monster is hit, remove it from the array
-                monsters.splice(index, 1); // Remove the monster from the array
+        function createMonster() {
+            const monster = {
+                x: canvas.width,  // Start off the right side of the canvas
+                y: canvas.height - 150, // Same height as the launch point
+                width: 20,
+                height: 50,
+                move: function () {
+                    this.x -= monsterSpeed;
+                }
+            };
+            monsters.push(monster);
+        }
+
+        function drawMonster(monster) {
+            // Draw a simple stickman monster
+            ctx.fillStyle = 'green';
+            ctx.beginPath();
+            ctx.arc(monster.x, monster.y - 30, 10, 0, Math.PI * 2); // Head
+            ctx.fill();
+            
+            ctx.fillStyle = 'green';
+            ctx.fillRect(monster.x - 5, monster.y - 10, 10, 30); // Body
+
+            ctx.beginPath();
+            ctx.moveTo(monster.x - 5, monster.y + 20); // Left arm
+            ctx.lineTo(monster.x - 15, monster.y + 30);
+            ctx.moveTo(monster.x + 5, monster.y + 20); // Right arm
+            ctx.lineTo(monster.x + 15, monster.y + 30);
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.moveTo(monster.x - 5, monster.y + 50); // Left leg
+            ctx.lineTo(monster.x - 10, monster.y + 60);
+            ctx.moveTo(monster.x + 5, monster.y + 50); // Right leg
+            ctx.lineTo(monster.x + 10, monster.y + 60);
+            ctx.stroke();
+        }
+
+        function calculateArrowTrajectory(angle, power, totalTime = 5) {
+            const g = 9.8; // Acceleration due to gravity (m/s^2)
+            const angleInRadians = (angle * Math.PI) / 180; // Convert angle to radians
+            const initialVelocityX = power * Math.cos(angleInRadians); // Horizontal velocity
+            const initialVelocityY = power * Math.sin(angleInRadians); // Vertical velocity
+
+            const points = [];
+            const deltaTime = 0.05; // Smaller intervals for smooth animation
+
+            for (let t = 0; t <= totalTime; t += deltaTime) {
+                const x = initialVelocityX * t; // x = vx * t
+                const y = initialVelocityY * t - 0.5 * g * t * t; // y = vy * t - (1/2) * g * t^2
+
+                // Store height above ground, not below
+                if (y >= -10) {
+                    points.push({ x, y });
+                } else {
+                    // If below ground, calculate where it hits
+                    const tImpact = initialVelocityY / g;
+                    points.push({ x: initialVelocityX * tImpact, y: 0 });
+                    break;
+                }
+            }
+
+            return points;
+        }
+
+        function checkCollision(arrow, monster) {
+            const arrowRadius = 5;
+            const monsterRadius = 10; // Assume monster's hitbox is roughly circular for simplicity
+
+            const dx = arrow.x - monster.x;
+            const dy = arrow.y - (monster.y - 30); // Adjust monster's head position
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            return distance < (arrowRadius + monsterRadius); // Check if the arrow is close enough to the monster
+        }
+
+        function drawTrajectory() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawGround(); // Draw ground first to create the soil effect
+            ctx.fillStyle = 'black';
+            ctx.beginPath();
+            ctx.arc(launchPoint.x, launchPoint.y, 5, 0, Math.PI * 2);
+            ctx.fill();
+
+            if (!isArrowFlying) {
+                const trajectory = calculateArrowTrajectory(angle, power);
+                const scale = 5;
+
+                trajectory.forEach((point, index) => {
+                    const canvasX = launchPoint.x + point.x * scale;
+                    const canvasY = launchPoint.y - point.y * scale;
+
+                    // Draw points above or on ground
+                    if (canvasY <= canvas.height) {
+                        ctx.beginPath();
+                        ctx.arc(canvasX, canvasY, 2, 0, Math.PI * 2);
+                        ctx.fillStyle = 'red';
+                        ctx.fill();
+
+                        // If this is the last point, draw a line to the ground to show where it lands
+                        if (index === trajectory.length - 1) {
+                            ctx.beginPath();
+                            ctx.moveTo(canvasX, canvasY);
+                            ctx.lineTo(canvasX, canvas.height);
+                            ctx.strokeStyle = 'red';
+                            ctx.stroke();
+                        }
+                    }
+                });
             }
         }
-    });
-}
+
+        function drawArrow() {
+            if (isArrowFlying && arrowPosition) {
+                ctx.fillStyle = 'blue';
+                ctx.beginPath();
+                ctx.arc(arrowPosition.x, arrowPosition.y, 5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        function drawTower() {
+            // Draw a simple tower under the launch point
+            const towerHeight = 50;
+            const towerWidth = 20;
+            const towerX = launchPoint.x - towerWidth / 2; // Center the tower under the launch point
+            const towerY = launchPoint.y + 10; // Position it below the launch point (adjust as needed)
+
+            ctx.fillStyle = 'gray';
+            ctx.fillRect(towerX, towerY, towerWidth, towerHeight);
+        }
+
+        function drawGround() {
+            // Draw a soil-like ground using a simple gradient
+            const groundGradient = ctx.createLinearGradient(0, canvas.height - 100, 0, canvas.height);
+            groundGradient.addColorStop(0, "#8B4513"); // Dark brown
+            groundGradient.addColorStop(0.5, "#CD853F"); // Sandy brown
+            groundGradient.addColorStop(1, "#D2691E"); // Chocolate
+
+            ctx.fillStyle = groundGradient;
+            ctx.fillRect(0, canvas.height - 100, canvas.width, 100); // Adjust height as needed
+        }
+
+        function updateAngleAndPower(mouseX, mouseY) {
+            const dx = launchPoint.x - mouseX; // Reverse the x direction
+            const dy = mouseY - launchPoint.y; // Reverse the y direction
+
+            angle = Math.atan2(dy, dx) * (180 / Math.PI); // Convert radians to degrees
+            power = Math.min(Math.sqrt(dx * dx + dy * dy) / 2, 100); // Scale power
+        }
+
+        function startArrowFlight() {
+            trajectoryPoints = calculateArrowTrajectory(angle, power);
+            if (trajectoryPoints.length > 0) {
+                isArrowFlying = true;
+                arrowPosition = { x: launchPoint.x, y: launchPoint.y };
+                animateArrow();
+            }
+        }
+
+        function animateArrow() {
+            if (trajectoryPoints.length > 0) {
+                const scale = 5;
+                const nextPoint = trajectoryPoints.shift();
+                arrowPosition.x = launchPoint.x + nextPoint.x * scale;
+                arrowPosition.y = launchPoint.y - nextPoint.y * scale;
+
+                // Check for collisions with monsters
+                monsters.forEach((monster, index) => {
+                    if (checkCollision(arrowPosition, monster)) {
+                        monsters.splice(index, 1); // Remove the monster from the array
+                    }
+                });
+
+                drawScene();
+                requestAnimationFrame(animateArrow);
+            } else {
+                isArrowFlying = false;
+                arrowPosition = null;
+                drawScene();
+            }
+        }
+
+        function drawScene() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawGround(); // Draw the ground first for a soil effect
+            drawTower();  // Tower on top of ground
+            drawTrajectory();
+            drawArrow();
+
+            // Update and draw monsters
+            monsters.forEach(monster => {
+                monster.move();
+                drawMonster(monster);
+            });
+        }
+
+        canvas.addEventListener('mousedown', (event) => {
+            isDragging = true;
+        });
+
+        canvas.addEventListener('mousemove', (event) => {
+            if (isDragging) {
+                const rect = canvas.getBoundingClientRect();
+                const mouseX = event.clientX - rect.left;
+                const mouseY = event.clientY - rect.top;
+
+                updateAngleAndPower(mouseX, mouseY);
+                drawScene();
+            }
+        });
+
+        canvas.addEventListener('mouseup', () => {
+            isDragging = false;
+            if (!isArrowFlying) {
+                startArrowFlight();
+            }
+        });
+
+        // Create a monster every 3 seconds
+        setInterval(createMonster, 3000);
+
+        drawScene();
+    </script>
+</body>
+</html>
