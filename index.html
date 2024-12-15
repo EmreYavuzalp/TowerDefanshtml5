@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Two-Player Arrow Game</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+        }
+        canvas {
+            border: 1px solid black;
+            cursor: crosshair;
+        }
+    </style>
+</head>
+<body>
+    <h1>Two-Player Arrow Game</h1>
+    <canvas id="trajectoryCanvas" width="2000" height="1000"></canvas>
+    <p id="status">Player 1's Turn</p>
+
+    <script>
+        const canvas = document.getElementById('trajectoryCanvas');
+        const ctx = canvas.getContext('2d');
+        const statusElement = document.getElementById('status');
+
+        let currentPlayer = 1; // 1 for Player 1, 2 for Player 2
+        const players = [
+            { x: 150, y: canvas.height - 150, width: 80, height: 150, visible: true },
+            { x: canvas.width - 230, y: canvas.height - 150, width: 80, height: 150, visible: true }
+        ];
+        let angle = 45;
+        let power = 50;
+        let isDragging = false;
+        let launchPoint = { x: players[currentPlayer - 1].x + 40, y: players[currentPlayer - 1].y }; // Adjust launch point based on the current player
+        let isArrowFlying = false;
+        let trajectoryPoints = [];
+        let arrowPosition = null;
+        let cameraX = 0; // To control camera position
+
+        function calculateArrowTrajectory(angle, power, totalTime = 5) {
+            const g = 3; // Acceleration due to gravity (m/s^2)
+            const angleInRadians = (angle * Math.PI) / 180; // Convert angle to radians
+            const initialVelocityX = power * Math.cos(angleInRadians);
+            const initialVelocityY = power * Math.sin(angleInRadians);
+
+            const points = [];
+            const deltaTime = 0.05; // Smaller intervals for smooth animation
+
+            for (let t = 0; t <= totalTime; t += deltaTime) {
+                const x = initialVelocityX * t;
+                const y = initialVelocityY * t - 0.5 * g * t * t;
+
+                points.push({ x, y });
+            }
+
+            return points;
+        }
+
+        function drawTrajectory() {
+            ctx.fillStyle = 'black';
+            ctx.beginPath();
+            ctx.arc(launchPoint.x - cameraX, launchPoint.y, 5, 0, Math.PI * 2);
+            ctx.fill();
+
+            if (!isArrowFlying) {
+                const trajectory = calculateArrowTrajectory(angle, power);
+                const scale = 5;
+
+                const direction = currentPlayer === 1 ? -1 : 1; // Direction for Player 1 is negative, for Player 2 it's positive
+                trajectory.forEach((point) => {
+                    const canvasX = launchPoint.x + point.x * scale * direction - cameraX;
+                    const canvasY = launchPoint.y - point.y * scale; // Negative y for both players as they aim upwards
+
+                    // Check if the point is within the canvas
+                    if (canvasY >= 0 && canvasY <= canvas.height) {
+                        ctx.beginPath();
+                        ctx.arc(canvasX, canvasY, 2, 0, Math.PI * 2);
+                        ctx.fillStyle = 'red';
+                        ctx.fill();
+                    }
+                });
+            }
+        }
+
+        function drawArrow() {
+            if (isArrowFlying && arrowPosition) {
+                ctx.fillStyle = 'blue';
+                ctx.beginPath();
+                ctx.arc(arrowPosition.x - cameraX, arrowPosition.y, 5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        function drawPlayers() {
+            players.forEach((player, index) => {
+                if (player.visible) {
+                    ctx.save();
+                    ctx.strokeStyle = index + 1 === currentPlayer ? 'green' : 'gray';
+                    ctx.lineWidth = 3;
+
+                    // Position the stickman at the base of where the rectangle was
+                    const centerX = player.x + player.width / 2;
+                    const baseY = player.y + player.height;
+
+                    // Head
+                    ctx.beginPath();
+                    ctx.arc(centerX - cameraX, baseY - player.height + 15, 10, 0, 2 * Math.PI);
+                    ctx.stroke();
+
+                    // Body
+                    ctx.beginPath();
+                    ctx.moveTo(centerX - cameraX, baseY - player.height + 25);
+                    ctx.lineTo(centerX - cameraX, baseY - 20);
+                    ctx.stroke();
+
+                    // Arms
+                    ctx.beginPath();
+                    ctx.moveTo(centerX - cameraX, baseY - player.height + 50);
+                    ctx.lineTo(centerX - cameraX - 20, baseY - player.height + 30);
+                    ctx.moveTo(centerX - cameraX, baseY - player.height + 50);
+                    ctx.lineTo(centerX - cameraX + 20, baseY - player.height + 30);
+                    ctx.stroke();
+
+                    // Legs
+                    ctx.beginPath();
+                    ctx.moveTo(centerX - cameraX, baseY - 20);
+                    ctx.lineTo(centerX - cameraX - 15, baseY);
+                    ctx.moveTo(centerX - cameraX, baseY - 20);
+                    ctx.lineTo(centerX - cameraX + 15, baseY);
+                    ctx.stroke();
+
+                    ctx.restore();
+                }
+            });
+        }
+
+        function updateAngleAndPower(mouseX, mouseY) {
+            let dx = mouseX - launchPoint.x;
+            let dy = mouseY - launchPoint.y;
+
+            // Adjust angle based on which player is shooting
+            if (currentPlayer === 1) {
+                // Player 1 aims from left to right but with a reversed x calculation
+                angle = Math.atan2(-dy, -dx) * (180 / Math.PI); // Negative dx for Player 1 to aim right
+            } else {
+                // Player 2 aims from right to left
+                angle = Math.atan2(-dy, dx) * (180 / Math.PI); // Positive dx for Player 2 to aim left
+            }
+
+            if (angle < 0) angle += 360; // Ensure angle is positive
+
+            // Power based on the distance from the launch point to the mouse
+            power = Math.min(Math.sqrt(dx * dx + dy * dy) / 2, 100); // Scale power
+        }
+
+        function startArrowFlight() {
+            trajectoryPoints = calculateArrowTrajectory(angle, power);
+            if (trajectoryPoints.length > 0) {
+                isArrowFlying = true;
+                arrowPosition = { x: launchPoint.x, y: launchPoint.y };
+                animateArrow();
+            }
+        }
+
+        function animateArrow() {
+            if (trajectoryPoints.length > 0) {
+                const scale = 5;
+                const nextPoint = trajectoryPoints.shift();
+                const direction = currentPlayer === 1 ? -1 : 1; // Direction for trajectory animation
+                arrowPosition.x = launchPoint.x + nextPoint.x * scale * direction;
+                arrowPosition.y = launchPoint.y - nextPoint.y * scale; // Negative y for both players
+
+                // Check for collision with the ground or players
+                if (arrowPosition.y >= canvas.height || arrowPosition.x < 0 || arrowPosition.x > canvas.width) {
+                    // Arrow hit the ground or went out of bounds
+                    isArrowFlying = false;
+                    arrowPosition = null;
+                    currentPlayer = currentPlayer === 1 ? 2 : 1; // Switch player
+                    launchPoint = { x: players[currentPlayer - 1].x + 40, y: players[currentPlayer - 1].y };
+                    statusElement.textContent = `Player ${currentPlayer}'s Turn`;
+                } else {
+                    const opponent = players.find(p => p !== players[currentPlayer - 1]);
+                    if (
+                        opponent.visible &&
+                        arrowPosition.x >= opponent.x &&
+                        arrowPosition.x <= opponent.x + opponent.width &&
+                        arrowPosition.y >= opponent.y &&
+                        arrowPosition.y <= opponent.y + opponent.height
+                    ) {
+                        opponent.visible = false;
+                        isArrowFlying = false;
+                        arrowPosition = null;
+                        alert(`Player ${currentPlayer} wins!`);
+                        return; // End the game
+                    }
+                }
+
+                // Move camera to follow the arrow
+                cameraX = arrowPosition.x - canvas.width / 2;
+
+                drawScene();
+                if (isArrowFlying) {
+                    requestAnimationFrame(animateArrow);
+                }
+            } else {
+                isArrowFlying = false;
+                arrowPosition = null;
+                currentPlayer = currentPlayer === 1 ? 2 : 1; // Switch player
+                launchPoint = { x: players[currentPlayer - 1].x + 40, y: players[currentPlayer - 1].y };
+                statusElement.textContent = `Player ${currentPlayer}'s Turn`;
+                drawScene();
+            }
+        }
+
+        function drawScene() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawTrajectory();
+            drawArrow();
+            drawPlayers();
+        }
+
+        canvas.addEventListener('mousedown', (event) => {
+            isDragging = true;
+        });
+
+        canvas.addEventListener('mousemove', (event) => {
+            if (isDragging) {
+                const rect = canvas.getBoundingClientRect();
+                const mouseX = event.clientX - rect.left;
+                const mouseY = event.clientY - rect.top;
+
+                updateAngleAndPower(mouseX, mouseY);
+                drawScene();
+            }
+        });
+
+        canvas.addEventListener('mouseup', () => {
+            isDragging = false;
+            if (!isArrowFlying) {
+                startArrowFlight();
+            }
+        });
+
+        drawScene();
+    </script>
+</body>
+</html>
